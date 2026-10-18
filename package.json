@@ -1,0 +1,10 @@
+{
+  "name": "my-photos",
+  "version": "1.0.0",
+  "description": "Apple Photos-inspired local photo gallery with yearly albums",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "scan": "node -e \"require('./lib/scanner').scanAll().then(n => { console.log(n + ' photos indexed'); process.exit(0); })\""
+  }
+}

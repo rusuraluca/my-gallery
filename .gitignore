@@ -1,0 +1,13 @@
+# Generated at runtime
+photos.json
+.thumbs/
+
+# User photos (not part of the repo)
+photos/*/
+!photos/.gitkeep
+
+# Node
+node_modules/
+
+# macOS
+.DS_Store
