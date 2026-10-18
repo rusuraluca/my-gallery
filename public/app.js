@@ -1,0 +1,467 @@
+(() => {
+  const $ = s => document.querySelector(s);
+  const $$ = s => document.querySelectorAll(s);
+
+  const state = {
+    photos: [],
+    year: null,
+    page: 1,
+    pages: 1,
+    total: 0,
+    loading: false,
+    currentIndex: 0,
+    years: []
+  };
+
+  const grid = $('#photo-grid');
+  const lightbox = $('#lightbox');
+  const lbImg = $('#lb-img');
+  const infoPanel = $('#info-panel');
+  const uploadModal = $('#upload-modal');
+
+  // ── Theme ──────────────────────────────────────
+  function initTheme() {
+    const saved = localStorage.getItem('theme');
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    const theme = saved || (prefersDark ? 'dark' : 'light');
+    setTheme(theme);
+  }
+
+  function setTheme(theme) {
+    document.documentElement.setAttribute('data-theme', theme);
+    localStorage.setItem('theme', theme);
+    document.querySelector('meta[name="theme-color"]').content = theme === 'dark' ? '#000000' : '#ffffff';
+  }
+
+  $('#theme-btn').addEventListener('click', () => {
+    const current = document.documentElement.getAttribute('data-theme');
+    setTheme(current === 'dark' ? 'light' : 'dark');
+  });
+
+  // ── API ────────────────────────────────────────
+  async function fetchYears() {
+    const res = await fetch('/api/years');
+    state.years = await res.json();
+    renderYears();
+  }
+
+  async function fetchPhotos(year, page) {
+    const params = new URLSearchParams({ page: String(page), limit: '100' });
+    if (year) params.set('year', String(year));
+    const res = await fetch(`/api/photos?${params}`);
+    return res.json();
+  }
+
+  // ── Render Years ──────────────────────────────
+  function renderYears() {
+    const container = $('#years-list');
+    container.innerHTML = state.years.map(y => `
+      <button class="nav-item ${state.year === y.year ? 'active' : ''}" data-year="${y.year}">
+        <span>${y.year}</span>
+        <span class="year-count">${formatCount(y.count)}</span>
+      </button>
+    `).join('');
+
+    container.querySelectorAll('.nav-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const year = parseInt(btn.dataset.year, 10);
+        selectYear(year === state.year ? null : year);
+        closeSidebar();
+      });
+    });
+  }
+
+  function formatCount(n) {
+    if (n >= 1000) return (n / 1000).toFixed(1).replace('.0', '') + 'k';
+    return String(n);
+  }
+
+  // ── Select Year ────────────────────────────────
+  async function selectYear(year) {
+    state.year = year;
+    state.page = 1;
+    state.photos = [];
+    state.pages = 1;
+
+    $('#current-title').textContent = year ? String(year) : 'All Photos';
+    $('#mobile-title').textContent = year ? String(year) : 'Photos';
+    grid.innerHTML = '';
+    $('#empty-state').hidden = true;
+
+    $$('.nav-item').forEach(el => el.classList.remove('active'));
+    if (year) {
+      const btn = document.querySelector(`.nav-item[data-year="${year}"]`);
+      if (btn) btn.classList.add('active');
+    } else {
+      $('#nav-all').classList.add('active');
+    }
+
+    await loadPage();
+  }
+
+  async function loadPage() {
+    if (state.loading || state.page > state.pages) return;
+    state.loading = true;
+    $('#loading').hidden = state.photos.length > 0;
+
+    try {
+      const data = await fetchPhotos(state.year, state.page);
+      state.total = data.total;
+      state.pages = data.pages;
+      state.photos.push(...data.photos);
+
+      renderPhotos(data.photos);
+      updateCount();
+
+      if (state.photos.length === 0) {
+        $('#empty-state').hidden = false;
+      }
+
+      state.page++;
+    } catch (err) {
+      console.error('Failed to load photos:', err);
+    } finally {
+      state.loading = false;
+      $('#loading').hidden = true;
+    }
+  }
+
+  function updateCount() {
+    const count = state.total;
+    $('#photo-count').textContent = count > 0 ? `${formatCount(count)} photo${count !== 1 ? 's' : ''}` : '';
+  }
+
+  // ── Render Photos ─────────────────────────────
+  function renderPhotos(photos) {
+    let lastYear = null;
+    const showYearHeaders = !state.year;
+
+    const fragment = document.createDocumentFragment();
+
+    photos.forEach((photo, i) => {
+      if (showYearHeaders && photo.year !== lastYear) {
+        lastYear = photo.year;
+        const divider = document.createElement('div');
+        divider.className = 'year-divider';
+        const count = state.years.find(y => y.year === photo.year)?.count || '';
+        divider.innerHTML = `<h3>${photo.year}</h3><span>${formatCount(count)} photos</span>`;
+        fragment.appendChild(divider);
+      }
+
+      const item = document.createElement('div');
+      item.className = 'photo-item';
+      item.style.animationDelay = `${Math.min(i * 15, 300)}ms`;
+      item.dataset.id = photo.id;
+
+      const img = document.createElement('img');
+      img.alt = photo.filename;
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.dataset.src = `/api/photo/${photo.id}/thumb`;
+
+      item.appendChild(img);
+      item.addEventListener('click', () => openLightbox(state.photos.indexOf(photo)));
+      fragment.appendChild(item);
+    });
+
+    grid.appendChild(fragment);
+
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const img = entry.target.querySelector('img');
+          if (img && img.dataset.src) {
+            img.src = img.dataset.src;
+            img.onload = () => entry.target.classList.add('loaded');
+            img.onerror = () => entry.target.classList.add('loaded');
+            delete img.dataset.src;
+          }
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { rootMargin: '300px' });
+
+    grid.querySelectorAll('.photo-item:not(.loaded)').forEach(el => observer.observe(el));
+  }
+
+  // ── Infinite Scroll ────────────────────────────
+  grid.addEventListener('scroll', () => {
+    const { scrollTop, scrollHeight, clientHeight } = grid;
+    if (scrollHeight - scrollTop - clientHeight < 600) {
+      loadPage();
+    }
+  });
+
+  // ── Lightbox ───────────────────────────────────
+  function openLightbox(index) {
+    state.currentIndex = index;
+    lightbox.hidden = false;
+    requestAnimationFrame(() => lightbox.classList.add('visible'));
+    showLightboxImage(index);
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeLightbox() {
+    lightbox.classList.remove('visible');
+    infoPanel.classList.remove('visible');
+    infoPanel.hidden = true;
+    setTimeout(() => {
+      lightbox.hidden = true;
+      lbImg.classList.remove('visible');
+    }, 300);
+    document.body.style.overflow = '';
+  }
+
+  function showLightboxImage(index) {
+    const photo = state.photos[index];
+    if (!photo) return;
+
+    lbImg.classList.remove('visible');
+    lbImg.src = `/api/photo/${photo.id}/full`;
+    lbImg.onload = () => lbImg.classList.add('visible');
+    lbImg.onerror = () => {
+      lbImg.src = `/api/photo/${photo.id}/thumb`;
+    };
+  }
+
+  function navigateLightbox(delta) {
+    const next = state.currentIndex + delta;
+    if (next < 0 || next >= state.photos.length) return;
+    state.currentIndex = next;
+    showLightboxImage(next);
+  }
+
+  $('#lb-close').addEventListener('click', closeLightbox);
+  $('#lb-prev').addEventListener('click', () => navigateLightbox(-1));
+  $('#lb-next').addEventListener('click', () => navigateLightbox(1));
+
+  lightbox.addEventListener('click', e => {
+    if (e.target === lightbox || e.target.classList.contains('lb-image-wrap')) {
+      closeLightbox();
+    }
+  });
+
+  // Swipe support
+  let touchStartX = 0;
+  let touchStartY = 0;
+  lightbox.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+
+  lightbox.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 50) {
+      navigateLightbox(dx > 0 ? -1 : 1);
+    }
+  }, { passive: true });
+
+  // ── Info Panel ─────────────────────────────────
+  $('#lb-info').addEventListener('click', () => {
+    const photo = state.photos[state.currentIndex];
+    if (!photo) return;
+
+    const rows = [];
+    if (photo.taken_at) {
+      const d = new Date(photo.taken_at);
+      rows.push(['Date', d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })]);
+      rows.push(['Time', d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })]);
+    }
+    if (photo.width && photo.height) {
+      rows.push(['Dimensions', `${photo.width} × ${photo.height}`]);
+    }
+    if (photo.filesize) {
+      rows.push(['File Size', formatBytes(photo.filesize)]);
+    }
+    rows.push(['Filename', photo.filename]);
+    rows.push(['Year', String(photo.year)]);
+
+    $('#info-body').innerHTML = rows.map(([label, value]) => `
+      <div class="info-row">
+        <span class="info-label">${label}</span>
+        <span class="info-value">${escHtml(value)}</span>
+      </div>
+    `).join('');
+
+    infoPanel.hidden = false;
+    requestAnimationFrame(() => infoPanel.classList.add('visible'));
+  });
+
+  $('#info-close').addEventListener('click', () => {
+    infoPanel.classList.remove('visible');
+    setTimeout(() => infoPanel.hidden = true, 350);
+  });
+
+  function formatBytes(bytes) {
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1048576) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / 1048576).toFixed(1) + ' MB';
+  }
+
+  function escHtml(s) {
+    const div = document.createElement('div');
+    div.textContent = s;
+    return div.innerHTML;
+  }
+
+  // ── Keyboard ───────────────────────────────────
+  document.addEventListener('keydown', e => {
+    if (!lightbox.hidden) {
+      if (e.key === 'Escape') closeLightbox();
+      if (e.key === 'ArrowLeft') navigateLightbox(-1);
+      if (e.key === 'ArrowRight') navigateLightbox(1);
+      if (e.key === 'i' || e.key === 'I') $('#lb-info').click();
+    } else {
+      if (e.key === 'Escape') closeSidebar();
+    }
+  });
+
+  // ── Upload ─────────────────────────────────────
+  function openUpload() {
+    uploadModal.hidden = false;
+    requestAnimationFrame(() => uploadModal.classList.add('visible'));
+    $('#upload-progress').hidden = true;
+    $('#progress-fill').style.width = '0%';
+  }
+
+  function closeUpload() {
+    uploadModal.classList.remove('visible');
+    setTimeout(() => uploadModal.hidden = true, 250);
+  }
+
+  $('#upload-btn').addEventListener('click', openUpload);
+  $('#mobile-upload-btn').addEventListener('click', openUpload);
+  $('#modal-close').addEventListener('click', closeUpload);
+  uploadModal.addEventListener('click', e => {
+    if (e.target === uploadModal) closeUpload();
+  });
+
+  const uploadArea = $('#upload-area');
+  const fileInput = $('#file-input');
+
+  $('#file-picker-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.click();
+  });
+
+  uploadArea.addEventListener('click', () => fileInput.click());
+
+  ['dragover', 'dragenter'].forEach(ev => {
+    uploadArea.addEventListener(ev, e => {
+      e.preventDefault();
+      uploadArea.classList.add('dragover');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(ev => {
+    uploadArea.addEventListener(ev, e => {
+      e.preventDefault();
+      uploadArea.classList.remove('dragover');
+    });
+  });
+
+  uploadArea.addEventListener('drop', e => {
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    if (files.length) uploadFiles(files);
+  });
+
+  fileInput.addEventListener('change', () => {
+    const files = Array.from(fileInput.files);
+    if (files.length) uploadFiles(files);
+    fileInput.value = '';
+  });
+
+  async function uploadFiles(files) {
+    $('#upload-progress').hidden = false;
+    $('#progress-fill').style.width = '0%';
+
+    let done = 0;
+    for (const file of files) {
+      $('#progress-text').textContent = `Uploading ${done + 1}/${files.length}: ${file.name}`;
+
+      try {
+        await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.upload.addEventListener('progress', e => {
+            if (e.lengthComputable) {
+              const filePct = (e.loaded / e.total) * 100;
+              const totalPct = ((done + filePct / 100) / files.length) * 100;
+              $('#progress-fill').style.width = `${totalPct}%`;
+            }
+          });
+          xhr.onload = () => {
+            if (xhr.status >= 200 && xhr.status < 300) resolve();
+            else reject(new Error(`Failed: ${xhr.status}`));
+          };
+          xhr.onerror = () => reject(new Error('Network error'));
+          xhr.open('POST', `/api/upload?filename=${encodeURIComponent(file.name)}`);
+          xhr.send(file);
+        });
+        done++;
+      } catch (err) {
+        $('#progress-text').textContent = `Error on ${file.name}: ${err.message}`;
+        return;
+      }
+    }
+
+    $('#progress-text').textContent = `Uploaded ${done} photo${done > 1 ? 's' : ''}!`;
+    $('#progress-fill').style.width = '100%';
+
+    setTimeout(() => {
+      closeUpload();
+      fetchYears();
+      selectYear(state.year);
+    }, 600);
+  }
+
+  // ── Scan ───────────────────────────────────────
+  $('#scan-btn').addEventListener('click', async () => {
+    const btn = $('#scan-btn');
+    btn.disabled = true;
+    btn.querySelector('span').textContent = 'Scanning...';
+
+    try {
+      const res = await fetch('/api/scan', { method: 'POST' });
+      const data = await res.json();
+      btn.querySelector('span').textContent = `Indexed ${data.indexed}`;
+      await fetchYears();
+      await selectYear(state.year);
+      setTimeout(() => {
+        btn.querySelector('span').textContent = 'Rescan';
+        btn.disabled = false;
+      }, 2000);
+    } catch (err) {
+      btn.querySelector('span').textContent = 'Rescan';
+      btn.disabled = false;
+    }
+  });
+
+  // ── Mobile Sidebar ─────────────────────────────
+  const sidebar = $('#sidebar');
+  const sidebarOverlay = $('#sidebar-overlay');
+
+  function openSidebar() {
+    sidebar.classList.add('open');
+    sidebarOverlay.hidden = false;
+    requestAnimationFrame(() => sidebarOverlay.classList.add('visible'));
+  }
+
+  function closeSidebar() {
+    sidebar.classList.remove('open');
+    sidebarOverlay.classList.remove('visible');
+    setTimeout(() => sidebarOverlay.hidden = true, 350);
+  }
+
+  $('#mobile-menu-btn').addEventListener('click', openSidebar);
+  sidebarOverlay.addEventListener('click', closeSidebar);
+
+  $('#nav-all').addEventListener('click', () => {
+    selectYear(null);
+    closeSidebar();
+  });
+
+  // ── Init ───────────────────────────────────────
+  initTheme();
+  fetchYears().then(() => selectYear(null));
+})();

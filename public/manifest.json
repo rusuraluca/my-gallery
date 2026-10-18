@@ -1,0 +1,18 @@
+{
+  "name": "Photos",
+  "short_name": "Photos",
+  "description": "Your personal photo library",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'><rect width='180' height='180' rx='40' fill='%230071e3'/><rect x='30' y='50' width='120' height='90' rx='12' fill='none' stroke='white' stroke-width='8'/><circle cx='68' cy='88' r='14' fill='white'/><path d='M30 120l30-25 22 18 28-35 40 42' fill='none' stroke='white' stroke-width='8' stroke-linecap='round' stroke-linejoin='round'/></svg>",
+      "sizes": "180x180",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
