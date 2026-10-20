@@ -4,7 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const os = require('os');
 
-const { loadIndex, saveIndex, flush, getYears, getPhotos, getPhoto, addPhoto, photoById } = require('./lib/db');
+const { loadIndex, saveIndex, flush, getYears, getPhotos, getPhoto, addPhoto, photoExists, resolvePath, toRelative } = require('./lib/db');
 const { scanAll, PHOTOS_DIR } = require('./lib/scanner');
 const { generateThumbnail, hasThumb } = require('./lib/thumbnails');
 const { createZipStream } = require('./lib/zip');
@@ -91,13 +91,13 @@ const server = http.createServer(async (req, res) => {
       // Prefer cached thumbnail
       let thumbFile = hasThumb(id) ? id : null;
       if (!thumbFile) {
-        const generated = generateThumbnail(photo.filepath, id);
+        const generated = generateThumbnail(resolvePath(photo.filepath), id);
         if (generated) thumbFile = id;
       }
 
       const filepath = thumbFile
         ? path.join(__dirname, '.thumbs', `${id}.jpg`)
-        : photo.filepath;
+        : resolvePath(photo.filepath);
 
       if (!fs.existsSync(filepath)) { res.writeHead(404); return res.end(); }
       const stat = fs.statSync(filepath);
@@ -114,8 +114,8 @@ const server = http.createServer(async (req, res) => {
       const year = parseInt(url.split('/')[3], 10);
       const data = getPhotos(year, 1, 100000);
       const entries = data.photos
-        .filter(p => fs.existsSync(p.filepath))
-        .map(p => ({ name: p.filename, filepath: p.filepath, mtime: p.taken_at ? new Date(p.taken_at) : undefined }));
+        .map(p => ({ name: p.filename, filepath: resolvePath(p.filepath), mtime: p.taken_at ? new Date(p.taken_at) : undefined }))
+        .filter(p => fs.existsSync(p.filepath));
       if (entries.length === 0) { res.writeHead(404); return res.end(); }
       res.writeHead(200, {
         'Content-Type': 'application/zip',
@@ -128,23 +128,25 @@ const server = http.createServer(async (req, res) => {
     if (url.startsWith('/api/photo/') && url.endsWith('/download')) {
       const id = url.split('/')[3];
       const photo = getPhoto(id);
-      if (!photo || !fs.existsSync(photo.filepath)) { res.writeHead(404); return res.end(); }
-      const stat = fs.statSync(photo.filepath);
+      const abs = photo && resolvePath(photo.filepath);
+      if (!photo || !fs.existsSync(abs)) { res.writeHead(404); return res.end(); }
+      const stat = fs.statSync(abs);
       res.writeHead(200, {
         'Content-Type': 'application/octet-stream',
         'Content-Length': stat.size,
         'Content-Disposition': `attachment; filename="${encodeURIComponent(photo.filename)}"`,
         'Cache-Control': 'no-cache'
       });
-      return fs.createReadStream(photo.filepath).pipe(res);
+      return fs.createReadStream(abs).pipe(res);
     }
 
     if (url.startsWith('/api/photo/') && url.endsWith('/full')) {
       const id = url.split('/')[3];
       const photo = getPhoto(id);
-      if (!photo || !fs.existsSync(photo.filepath)) { res.writeHead(404); return res.end(); }
-      const stat = fs.statSync(photo.filepath);
-      const ext = path.extname(photo.filepath).toLowerCase();
+      const abs = photo && resolvePath(photo.filepath);
+      if (!photo || !fs.existsSync(abs)) { res.writeHead(404); return res.end(); }
+      const stat = fs.statSync(abs);
+      const ext = path.extname(abs).toLowerCase();
       const type = MIME[ext] || 'image/jpeg';
       const range = req.headers.range;
 
@@ -161,7 +163,7 @@ const server = http.createServer(async (req, res) => {
           'Content-Length': end - start + 1,
           'Cache-Control': 'public, max-age=3600'
         });
-        return fs.createReadStream(photo.filepath, { start, end }).pipe(res);
+        return fs.createReadStream(abs, { start, end }).pipe(res);
       }
 
       res.writeHead(200, {
@@ -179,7 +181,7 @@ const server = http.createServer(async (req, res) => {
       const photo = deletePhoto(id);
       if (!photo) return json(res, { error: 'Not found' }, 404);
       // Delete file from disk + thumbnail
-      try { if (fs.existsSync(photo.filepath)) fs.unlinkSync(photo.filepath); } catch (e) {}
+      try { const f = resolvePath(photo.filepath); if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {}
       try { const t = path.join(__dirname, '.thumbs', `${id}.jpg`); if (fs.existsSync(t)) fs.unlinkSync(t); } catch (e) {}
       flush();
       return json(res, { deleted: id });
@@ -218,14 +220,15 @@ const server = http.createServer(async (req, res) => {
       const filepath = path.join(yearDir, safeName);
       fs.writeFileSync(filepath, body);
 
-      const id = crypto.createHash('md5').update(filepath).digest('hex').slice(0, 16);
+      const rel = toRelative(filepath);
+      const id = crypto.createHash('md5').update(rel).digest('hex').slice(0, 16);
 
       const upExt = path.extname(safeName).toLowerCase();
       const upIsVideo = (upExt === '.mp4' || upExt === '.mov' || upExt === '.m4v' || upExt === '.avi' || upExt === '.mkv' || upExt === '.gif');
       addPhoto({
         id,
         filename: safeName,
-        filepath,
+        filepath: rel,
         year, month, day,
         taken_at: takenDate.toISOString(),
         width: null,

@@ -84,6 +84,10 @@ my-gallery/
 
 No database server. No container. Your photos are just files you can open in Finder anytime.
 
+Paths in `photos.json` are stored **relative to the project root**, so you can move or rename the
+folder freely — just run `node server.js` again and the index repairs itself (stale and duplicate
+entries are pruned automatically).
+
 ## Performance at scale
 
 | Bottleneck | What happens at scale | How it's fixed |
