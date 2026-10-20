@@ -216,7 +216,8 @@ body{
   overflow-x:hidden;
   padding:0 12px 24px;
   display:grid;
-  grid-template-columns:repeat(auto-fill,minmax(210px,1fr));
+  grid-template-columns:repeat(auto-fill,minmax(240px,1fr));
+  grid-auto-rows:4px;
   gap:6px;
   align-content:start;
   scrollbar-width:none;
@@ -226,18 +227,17 @@ body{
 .photo-grid::-webkit-scrollbar{display:none}
 
 .photo-item{
-  aspect-ratio:1;
   overflow:hidden;
   border-radius:var(--radius-sm);
   cursor:pointer;
   position:relative;
   background:var(--bg-secondary);
+  grid-row-end:span 70;
 }
 
 .photo-item img{
   width:100%;
-  height:100%;
-  object-fit:cover;
+  height:auto;
   display:block;
   transition:transform .4s var(--ease),filter .3s var(--ease);
 }
@@ -623,6 +623,7 @@ body{
     gap:4px;
     padding:0 8px 24px;
   }
+  .photo-item{grid-row-end:span 50}
 
   .year-divider h3{font-size:32px}
 

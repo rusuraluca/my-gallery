@@ -11,7 +11,7 @@ flowchart LR
   iPhone["📱 iPhone<br/>Shortcut (monthly)"] -->|POST /api/upload| Server["🖥️ Node.js server<br/>port 3000"]
   Mac["💾 photos/2017/.../<br/>(year folders)"] -->|scan + EXIF| Server
   Server --> Index["📋 photos.json index<br/>(in-memory, debounced saves)"]
-  Server --> Thumbs["🖼️ .thumbs/<br/>(400px JPEG via sips)"]
+  Server --> Thumbs["🖼️ .thumbs/<br/>(800px JPEG via sips)"]
   Server --> Web["🌐 Web app<br/>(PWA, dark mode)"]
   Web --> Grid["Year grid + lazy load"]
   Web --> Lightbox["Lightbox + swipe + info"]
@@ -20,7 +20,7 @@ flowchart LR
 - Photos and videos stored as plain folders by year (`photos/2017/`, `photos/2018/`, …)
 - Server reads EXIF dates, builds a searchable index, generates thumbnails
 - Photos and videos (`.mp4 .mov .m4v .avi .mkv .gif`) — videos get a poster frame and play in the lightbox
-- Web app looks and feels like Apple Photos: year sidebar, grid, lightbox, info panel, dark mode
+- Web app looks and feels like Apple Photos: year sidebar, masonry grid, lightbox, info panel, dark mode
 - Installable as a PWA on iPhone ("Add to Home Screen")
 - Upload from browser (drag & drop) or from iPhone via a monthly iOS Shortcut
 - Download a single photo, or the **whole year as a ZIP**
@@ -79,7 +79,7 @@ my-gallery/
 │   │   └── ...
 │   └── 2017/
 ├── photos.json          ← index (generated, don't edit)
-└── .thumbs/             ← 400px thumbnails (generated)
+└── .thumbs/             ← 800px thumbnails (generated)
 ```
 
 No database server. No container. Your photos are just files you can open in Finder anytime.
@@ -93,7 +93,8 @@ entries are pruned automatically).
 | Bottleneck | What happens at scale | How it's fixed |
 |---|---|---|
 | Index saves | Writing `photos.json` on every photo = slow scan | Debounced batch saves (flush every 2s + on exit) |
-| Grid loading | Full-res images in grid = huge memory | 400px thumbnails via macOS `sips` (`qlmanage` for video posters), HTTP caching, native lazy loading |
+| Grid loading | Full-res images in grid = huge memory | 800px thumbnails via macOS `sips` (`qlmanage` for video posters), HTTP caching, native lazy loading |
+| Masonry | Varied aspect ratios in a fixed grid = heavy crops | Row-span masonry: each tile reserves space from its real ratio |
 | File lookup | Linear scan of index = slow | `Set` for O(1) filepath lookups |
 | ZIP export | One big buffer = memory blowup | Streaming writer (`lib/zip.js`) — never holds a whole file in memory |
 
@@ -118,7 +119,7 @@ entries are pruned automatically).
 |--------|----------|--------------|
 | GET | `/api/years` | List years with photo counts |
 | GET | `/api/photos?year=2017&page=1&limit=100` | Paginated photos |
-| GET | `/api/photo/:id/thumb` | 400px thumbnail (poster frame for videos) |
+| GET | `/api/photo/:id/thumb` | 800px thumbnail (poster frame for videos) |
 | GET | `/api/photo/:id/full` | Original file (supports HTTP range) |
 | GET | `/api/photo/:id/download` | Original file as an attachment |
 | GET | `/api/year/:year/zip` | Whole year as a streamed ZIP |

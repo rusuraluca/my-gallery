@@ -79,7 +79,7 @@ const server = http.createServer(async (req, res) => {
     if (url === '/api/photos') {
       const year = query.year ? parseInt(query.year, 10) : null;
       const page = Math.max(1, parseInt(query.page, 10) || 1);
-      const limit = Math.min(200, Math.max(1, parseInt(query.limit, 10) || 100));
+      const limit = Math.min(10000, Math.max(1, parseInt(query.limit, 10) || 100));
       return json(res, getPhotos(year, page, limit));
     }
 

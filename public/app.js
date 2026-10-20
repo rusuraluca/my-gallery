@@ -70,7 +70,7 @@
   }
 
   async function fetchPhotos(year, page) {
-    const params = new URLSearchParams({ page: String(page), limit: '100' });
+    const params = new URLSearchParams({ page: String(page), limit: '10000' });
     if (year) params.set('year', String(year));
     const res = await fetch(`/api/photos?${params}`);
     return res.json();
@@ -176,40 +176,71 @@
       const item = document.createElement('div');
       item.className = 'photo-item';
       item.dataset.id = photo.id;
+      // Known aspect ratio lets masonry reserve space before the image loads
+      item.dataset.w = photo.width || 1600;
+      item.dataset.h = photo.height || 900;
+
+      const img = document.createElement('img');
+      img.alt = photo.filename;
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = item.dataset.w;
+      img.height = item.dataset.h;
+      img.src = `/api/photo/${photo.id}/thumb`;
+      item.appendChild(img);
 
       if (photo.type === 'video' || /\.(mp4|mov|m4v|avi|mkv|gif)$/i.test(photo.filename)) {
-        const img = document.createElement('img');
-        img.alt = photo.filename;
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = `/api/photo/${photo.id}/thumb`;
-        item.appendChild(img);
         const overlay = document.createElement('div');
         overlay.className = 'video-overlay';
         overlay.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M5 3.5v11l9-5.5z"/></svg>';
         item.appendChild(overlay);
-      } else {
-        const img = document.createElement('img');
-        img.alt = photo.filename;
-        img.loading = 'lazy';
-        img.decoding = 'async';
-        img.src = `/api/photo/${photo.id}/thumb`;
-        item.appendChild(img);
       }
       item.addEventListener('click', () => openLightbox(state.photos.indexOf(photo)));
       fragment.appendChild(item);
     });
 
     grid.appendChild(fragment);
+    layoutMasonry();
   }
 
-  // ── Infinite Scroll ────────────────────────────
-  grid.addEventListener('scroll', () => {
-    const { scrollTop, scrollHeight, clientHeight } = grid;
-    if (scrollHeight - scrollTop - clientHeight < 600) {
-      loadPage();
+  // ── Masonry ─────────────────────────────────────
+  // Tiles span whole grid rows based on their real aspect ratio, so photos
+  // keep their shape and pack tightly instead of being cropped to squares.
+  const MASONRY_ROW = 4;
+  function masonryGap() {
+    return parseFloat(getComputedStyle(grid).rowGap) || 6;
+  }
+
+  function layoutMasonry() {
+    const gap = masonryGap();
+    grid.querySelectorAll('.photo-item').forEach(item => {
+      const w = item.getBoundingClientRect().width;
+      if (!w) return;
+      const nw = parseFloat(item.dataset.w) || 16;
+      const nh = parseFloat(item.dataset.h) || 9;
+      const span = Math.max(1, Math.ceil((w * nh / nw + gap) / (MASONRY_ROW + gap)));
+      item.style.gridRowEnd = `span ${span}`;
+    });
+  }
+
+  let masonryRaf = null;
+  function scheduleMasonry() {
+    if (masonryRaf) return;
+    masonryRaf = requestAnimationFrame(() => { masonryRaf = null; layoutMasonry(); });
+  }
+
+  // Re-measure once a real image size is known, and when the grid is resized
+  grid.addEventListener('load', e => {
+    if (e.target.tagName !== 'IMG') return;
+    const item = e.target.closest('.photo-item');
+    if (item && e.target.naturalWidth) {
+      item.dataset.w = e.target.naturalWidth;
+      item.dataset.h = e.target.naturalHeight;
     }
-  });
+    scheduleMasonry();
+  }, true);
+
+  new ResizeObserver(scheduleMasonry).observe(grid);
 
   // ── Lightbox ───────────────────────────────────
   function openLightbox(index) {
