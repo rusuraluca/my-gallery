@@ -1,6 +1,6 @@
 {
-  "name": "Photos",
-  "short_name": "Photos",
+  "name": "My Gallery",
+  "short_name": "My Gallery",
   "description": "Your personal photo library",
   "start_url": "/",
   "display": "standalone",

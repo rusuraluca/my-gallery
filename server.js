@@ -7,6 +7,7 @@ const os = require('os');
 const { loadIndex, saveIndex, flush, getYears, getPhotos, getPhoto, addPhoto, photoById } = require('./lib/db');
 const { scanAll, PHOTOS_DIR } = require('./lib/scanner');
 const { generateThumbnail, hasThumb } = require('./lib/thumbnails');
+const { createZipStream } = require('./lib/zip');
 
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
@@ -14,6 +15,10 @@ const MIME = {
   '.html': 'text/html', '.css': 'text/css', '.js': 'application/javascript',
   '.json': 'application/json', '.svg': 'image/svg+xml', '.png': 'image/png',
   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+  '.gif': 'image/gif', '.heic': 'image/heic', '.heif': 'image/heif',
+  '.tiff': 'image/tiff', '.tif': 'image/tiff',
+  '.mp4': 'video/mp4', '.mov': 'video/quicktime', '.m4v': 'video/x-m4v',
+  '.avi': 'video/x-msvideo', '.mkv': 'video/x-matroska',
   '.ico': 'image/x-icon', '.woff2': 'font/woff2'
 };
 
@@ -26,7 +31,12 @@ function serveFile(res, filepath, cache = false) {
   if (!fs.existsSync(filepath)) { res.writeHead(404); res.end(); return; }
   const ext = path.extname(filepath).toLowerCase();
   const headers = { 'Content-Type': MIME[ext] || 'application/octet-stream' };
-  if (cache) headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+  // Long cache only for images; revalidate CSS/JS so updates land immediately
+  if (cache && (ext === '.png' || ext === '.jpg' || ext === '.jpeg' || ext === '.webp' || ext === '.gif' || ext === '.ico' || ext === '.woff2')) {
+    headers['Cache-Control'] = 'public, max-age=31536000, immutable';
+  } else {
+    headers['Cache-Control'] = 'no-cache';
+  }
   const stat = fs.statSync(filepath);
   headers['Content-Length'] = stat.size;
   res.writeHead(200, headers);
@@ -100,18 +110,79 @@ const server = http.createServer(async (req, res) => {
       return fs.createReadStream(filepath).pipe(res);
     }
 
+    if (url.startsWith('/api/year/') && url.endsWith('/zip')) {
+      const year = parseInt(url.split('/')[3], 10);
+      const data = getPhotos(year, 1, 100000);
+      const entries = data.photos
+        .filter(p => fs.existsSync(p.filepath))
+        .map(p => ({ name: p.filename, filepath: p.filepath, mtime: p.taken_at ? new Date(p.taken_at) : undefined }));
+      if (entries.length === 0) { res.writeHead(404); return res.end(); }
+      res.writeHead(200, {
+        'Content-Type': 'application/zip',
+        'Content-Disposition': `attachment; filename="photos-${year}.zip"`,
+        'Cache-Control': 'no-cache'
+      });
+      return createZipStream(entries).pipe(res);
+    }
+
+    if (url.startsWith('/api/photo/') && url.endsWith('/download')) {
+      const id = url.split('/')[3];
+      const photo = getPhoto(id);
+      if (!photo || !fs.existsSync(photo.filepath)) { res.writeHead(404); return res.end(); }
+      const stat = fs.statSync(photo.filepath);
+      res.writeHead(200, {
+        'Content-Type': 'application/octet-stream',
+        'Content-Length': stat.size,
+        'Content-Disposition': `attachment; filename="${encodeURIComponent(photo.filename)}"`,
+        'Cache-Control': 'no-cache'
+      });
+      return fs.createReadStream(photo.filepath).pipe(res);
+    }
+
     if (url.startsWith('/api/photo/') && url.endsWith('/full')) {
       const id = url.split('/')[3];
       const photo = getPhoto(id);
       if (!photo || !fs.existsSync(photo.filepath)) { res.writeHead(404); return res.end(); }
       const stat = fs.statSync(photo.filepath);
       const ext = path.extname(photo.filepath).toLowerCase();
+      const type = MIME[ext] || 'image/jpeg';
+      const range = req.headers.range;
+
+      if (range) {
+        const m = /bytes=(\d*)-(\d*)/.exec(range);
+        let start = m && m[1] ? parseInt(m[1], 10) : 0;
+        let end = m && m[2] ? parseInt(m[2], 10) : stat.size - 1;
+        if (start > end || start >= stat.size) { res.writeHead(416, { 'Content-Range': `bytes */${stat.size}` }); return res.end(); }
+        end = Math.min(end, stat.size - 1);
+        res.writeHead(206, {
+          'Content-Type': type,
+          'Content-Range': `bytes ${start}-${end}/${stat.size}`,
+          'Accept-Ranges': 'bytes',
+          'Content-Length': end - start + 1,
+          'Cache-Control': 'public, max-age=3600'
+        });
+        return fs.createReadStream(photo.filepath, { start, end }).pipe(res);
+      }
+
       res.writeHead(200, {
-        'Content-Type': MIME[ext] || 'image/jpeg',
+        'Content-Type': type,
         'Content-Length': stat.size,
+        'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600'
       });
       return fs.createReadStream(photo.filepath).pipe(res);
+    }
+
+    if (url.startsWith('/api/photo/') && req.method === 'DELETE') {
+      const id = url.split('/')[3];
+      const { deletePhoto } = require('./lib/db');
+      const photo = deletePhoto(id);
+      if (!photo) return json(res, { error: 'Not found' }, 404);
+      // Delete file from disk + thumbnail
+      try { if (fs.existsSync(photo.filepath)) fs.unlinkSync(photo.filepath); } catch (e) {}
+      try { const t = path.join(__dirname, '.thumbs', `${id}.jpg`); if (fs.existsSync(t)) fs.unlinkSync(t); } catch (e) {}
+      flush();
+      return json(res, { deleted: id });
     }
 
     if (url.startsWith('/api/photo/')) {
@@ -149,6 +220,8 @@ const server = http.createServer(async (req, res) => {
 
       const id = crypto.createHash('md5').update(filepath).digest('hex').slice(0, 16);
 
+      const upExt = path.extname(safeName).toLowerCase();
+      const upIsVideo = (upExt === '.mp4' || upExt === '.mov' || upExt === '.m4v' || upExt === '.avi' || upExt === '.mkv' || upExt === '.gif');
       addPhoto({
         id,
         filename: safeName,
@@ -157,7 +230,8 @@ const server = http.createServer(async (req, res) => {
         taken_at: takenDate.toISOString(),
         width: null,
         height: null,
-        filesize: body.length
+        filesize: body.length,
+        type: upIsVideo ? 'video' : 'photo'
       });
 
       generateThumbnail(filepath, id);

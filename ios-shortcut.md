@@ -22,8 +22,11 @@ On your Mac, the server prints it on startup:
 ```
 Photos running:
 → http://localhost:3000
-→ http://10.173.40.35:3000  (your iPhone)   ← use this one
+→ http://<your-mac-ip>:3000  (your iPhone)   ← use this one
 ```
+
+> The Mac's IP is printed when the server starts. It can change — re-run
+> `node server.js` to see the current one, or check **System Settings → Wi-Fi → Details → IP Address**.
 
 ### 2. Create the Shortcut
 
@@ -47,7 +50,7 @@ Open the **Shortcuts** app on your iPhone → tap **+** to create a new shortcut
 | Request Body | `File` |
 | File | `Repeat Item` |
 
-> Replace `YOUR_IP` with your Mac's IP (e.g. `10.173.40.35`).
+> Replace `YOUR_IP` with your Mac's IP (the one printed at server startup).
 
 ### 3. Make it automatic
 
@@ -68,7 +71,7 @@ Tap your shortcut in the Shortcuts app to run it manually once. You should see t
 Make sure the server is running and reachable:
 
 ```bash
-cd my-photos
+cd my-gallery
 node server.js
 ```
 

@@ -14,6 +14,30 @@
   };
 
   const grid = $('#photo-grid');
+
+  // ── Toasts ─────────────────────────────────────
+  function showToast(message, type = 'info', duration = 3200) {
+    const container = $('#toast-container');
+    if (!container) return;
+    const toast = document.createElement('div');
+    toast.className = `toast toast-${type}`;
+    const icons = {
+      success: '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M13.8 4.2a1 1 0 010 1.4l-6.4 6.4a1 1 0 01-1.4 0L2.2 8.2a1 1 0 111.4-1.4l3.1 3.1 5.7-5.7a1 1 0 011.4 0z"/></svg>',
+      error: '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3a.75.75 0 01.75.75v3.5a.75.75 0 01-1.5 0v-3.5A.75.75 0 018 4zm0 7.5a1 1 0 110-2 1 1 0 010 2z"/></svg>',
+      info: '<svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 3.5a1 1 0 110 2 1 1 0 010-2zM6.75 8a.75.75 0 000 1.5H7.3v2.25H6.75a.75.75 0 000 1.5h2.5a.75.75 0 000-1.5H8.8V8.75A.75.75 0 008.05 8H6.75z"/></svg>'
+    };
+    toast.innerHTML = `<span class="toast-icon">${icons[type] || icons.info}</span><span class="toast-msg"></span>`;
+    toast.querySelector('.toast-msg').textContent = message;
+    container.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('visible'));
+    if (duration > 0) {
+      setTimeout(() => {
+        toast.classList.remove('visible');
+        setTimeout(() => toast.remove(), 300);
+      }, duration);
+    }
+    return toast;
+  }
   const lightbox = $('#lightbox');
   const lbImg = $('#lb-img');
   const infoPanel = $('#info-panel');
@@ -85,6 +109,7 @@
 
     $('#current-title').textContent = year ? String(year) : 'All Photos';
     $('#mobile-title').textContent = year ? String(year) : 'Photos';
+    $('#header-download').hidden = !year;
     grid.innerHTML = '';
     $('#empty-state').hidden = true;
 
@@ -128,7 +153,7 @@
 
   function updateCount() {
     const count = state.total;
-    $('#photo-count').textContent = count > 0 ? `${formatCount(count)} photo${count !== 1 ? 's' : ''}` : '';
+    $('#photo-count').textContent = count > 0 ? `${formatCount(count)} item${count !== 1 ? 's' : ''}` : '';
   }
 
   // ── Render Photos ─────────────────────────────
@@ -144,44 +169,38 @@
         const divider = document.createElement('div');
         divider.className = 'year-divider';
         const count = state.years.find(y => y.year === photo.year)?.count || '';
-        divider.innerHTML = `<h3>${photo.year}</h3><span>${formatCount(count)} photos</span>`;
+        divider.innerHTML = `<h3>${photo.year}</h3><span>${formatCount(count)} items</span>`;
         fragment.appendChild(divider);
       }
 
       const item = document.createElement('div');
       item.className = 'photo-item';
-      item.style.animationDelay = `${Math.min(i * 15, 300)}ms`;
       item.dataset.id = photo.id;
 
-      const img = document.createElement('img');
-      img.alt = photo.filename;
-      img.loading = 'lazy';
-      img.decoding = 'async';
-      img.dataset.src = `/api/photo/${photo.id}/thumb`;
-
-      item.appendChild(img);
+      if (photo.type === 'video' || /\.(mp4|mov|m4v|avi|mkv|gif)$/i.test(photo.filename)) {
+        const img = document.createElement('img');
+        img.alt = photo.filename;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = `/api/photo/${photo.id}/thumb`;
+        item.appendChild(img);
+        const overlay = document.createElement('div');
+        overlay.className = 'video-overlay';
+        overlay.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M5 3.5v11l9-5.5z"/></svg>';
+        item.appendChild(overlay);
+      } else {
+        const img = document.createElement('img');
+        img.alt = photo.filename;
+        img.loading = 'lazy';
+        img.decoding = 'async';
+        img.src = `/api/photo/${photo.id}/thumb`;
+        item.appendChild(img);
+      }
       item.addEventListener('click', () => openLightbox(state.photos.indexOf(photo)));
       fragment.appendChild(item);
     });
 
     grid.appendChild(fragment);
-
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          const img = entry.target.querySelector('img');
-          if (img && img.dataset.src) {
-            img.src = img.dataset.src;
-            img.onload = () => entry.target.classList.add('loaded');
-            img.onerror = () => entry.target.classList.add('loaded');
-            delete img.dataset.src;
-          }
-          observer.unobserve(entry.target);
-        }
-      });
-    }, { rootMargin: '300px' });
-
-    grid.querySelectorAll('.photo-item:not(.loaded)').forEach(el => observer.observe(el));
   }
 
   // ── Infinite Scroll ────────────────────────────
@@ -207,7 +226,7 @@
     infoPanel.hidden = true;
     setTimeout(() => {
       lightbox.hidden = true;
-      lbImg.classList.remove('visible');
+      const cur = document.querySelector('#lb-img'); if (cur) cur.classList.remove('visible');
     }, 300);
     document.body.style.overflow = '';
   }
@@ -216,12 +235,29 @@
     const photo = state.photos[index];
     if (!photo) return;
 
-    lbImg.classList.remove('visible');
-    lbImg.src = `/api/photo/${photo.id}/full`;
-    lbImg.onload = () => lbImg.classList.add('visible');
-    lbImg.onerror = () => {
-      lbImg.src = `/api/photo/${photo.id}/thumb`;
-    };
+    const wrap = document.querySelector('.lb-image-wrap');
+    wrap.innerHTML = '';
+    const isVideo = photo.type === 'video' || /\.(mp4|mov|m4v|avi|mkv|gif)$/i.test(photo.filename);
+
+    if (isVideo) {
+      const v = document.createElement('video');
+      v.id = 'lb-img';
+      v.controls = true;
+      v.autoplay = false;
+      v.playsInline = true;
+      v.src = `/api/photo/${photo.id}/full`;
+      v.classList.add('visible');
+      wrap.appendChild(v);
+      try { v.load(); } catch (e) {}
+      setTimeout(() => v.play().catch(()=>{}), 100);
+    } else {
+      const img = document.createElement('img');
+      img.id = 'lb-img';
+      img.src = `/api/photo/${photo.id}/full`;
+      img.onload = () => img.classList.add('visible');
+      img.onerror = () => { img.src = `/api/photo/${photo.id}/thumb`; };
+      wrap.appendChild(img);
+    }
   }
 
   function navigateLightbox(delta) {
@@ -291,6 +327,104 @@
   $('#info-close').addEventListener('click', () => {
     infoPanel.classList.remove('visible');
     setTimeout(() => infoPanel.hidden = true, 350);
+  });
+
+  // ── Delete ─────────────────────────────────────
+  $('#lb-delete').addEventListener('click', async () => {
+    const photo = state.photos[state.currentIndex];
+    if (!photo) return;
+    if (!confirm(`Delete "${photo.filename}"?\n\nThis removes the file from disk permanently.`)) return;
+
+    const id = photo.id;
+    const idx = state.currentIndex;
+
+    try {
+      const r = await fetch(`/api/photo/${id}`, { method: 'DELETE' });
+      if (!r.ok) throw new Error('Delete failed');
+
+      state.photos.splice(idx, 1);
+      const y = state.years.find(y => y.year === photo.year);
+      if (y) { y.count--; if (y.count <= 0) state.years = state.years.filter(v => v.year !== photo.year); }
+      state.total--;
+      showToast(`Deleted "${photo.filename}"`, 'success');
+
+      if (state.photos.length === 0) {
+        closeLightbox();
+        renderSidebar();
+        updateCount();
+        $('#empty-state').hidden = false;
+        return;
+      }
+      if (idx >= state.photos.length) state.currentIndex = state.photos.length - 1;
+      showLightboxImage(state.currentIndex);
+      renderSidebar();
+      updateCount();
+    } catch (err) {
+      showToast('Failed to delete: ' + err.message, 'error');
+    }
+  });
+
+  // ── Share ──────────────────────────────────────
+  $('#lb-share').addEventListener('click', async () => {
+    const photo = state.photos[state.currentIndex];
+    if (!photo) return;
+    const url = `${location.origin}/api/photo/${photo.id}/full`;
+    try {
+      const resp = await fetch(url);
+      const blob = await resp.blob();
+      const mime = blob.type || resp.headers.get('content-type') || 'application/octet-stream';
+      const file = new File([blob], photo.filename, { type: mime });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: 'My Gallery' });
+        return;
+      }
+      if (navigator.share) {
+        await navigator.share({ title: photo.filename, url });
+        return;
+      }
+      const dl = document.createElement('a');
+      dl.href = URL.createObjectURL(blob);
+      dl.download = photo.filename;
+      document.body.appendChild(dl);
+      dl.click();
+      document.body.removeChild(dl);
+      URL.revokeObjectURL(dl.href);
+      showToast(`Saved "${photo.filename}"`, 'success');
+    } catch (err) {
+      if (err.name === 'AbortError') return;
+      const dl = document.createElement('a');
+      dl.href = url;
+      dl.download = photo.filename;
+      document.body.appendChild(dl);
+      dl.click();
+      document.body.removeChild(dl);
+      showToast('Sharing unavailable — downloaded instead', 'info');
+    }
+  });
+
+  // ── Download (single) ──────────────────────────
+  $('#lb-download').addEventListener('click', () => {
+    const photo = state.photos[state.currentIndex];
+    if (!photo) return;
+    const a = document.createElement('a');
+    a.href = `/api/photo/${photo.id}/download`;
+    a.download = photo.filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast(`Downloading "${photo.filename}"`, 'info');
+  });
+
+  // ── Download (year ZIP) ────────────────────────
+  $('#header-download').addEventListener('click', () => {
+    if (!state.year) return;
+    const a = document.createElement('a');
+    a.href = `/api/year/${state.year}/zip`;
+    a.download = `photos-${state.year}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast(`Preparing ZIP of ${state.year}…`, 'info');
   });
 
   function formatBytes(bytes) {
@@ -401,12 +535,14 @@
         done++;
       } catch (err) {
         $('#progress-text').textContent = `Error on ${file.name}: ${err.message}`;
+        showToast(`Error on ${file.name}: ${err.message}`, 'error');
         return;
       }
     }
 
     $('#progress-text').textContent = `Uploaded ${done} photo${done > 1 ? 's' : ''}!`;
     $('#progress-fill').style.width = '100%';
+    showToast(`Uploaded ${done} item${done !== 1 ? 's' : ''}`, 'success');
 
     setTimeout(() => {
       closeUpload();
@@ -420,11 +556,15 @@
     const btn = $('#scan-btn');
     btn.disabled = true;
     btn.querySelector('span').textContent = 'Scanning...';
+    const scanToast = showToast('Scanning library…', 'info', 0);
+    if (scanToast) scanToast.querySelector('.toast-icon').innerHTML = '<svg class="toast-spin" width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M8 1.5a6.5 6.5 0 106.5 6.5" stroke-linecap="round"/></svg>';
 
     try {
       const res = await fetch('/api/scan', { method: 'POST' });
       const data = await res.json();
       btn.querySelector('span').textContent = `Indexed ${data.indexed}`;
+      if (scanToast) { scanToast.querySelector('.toast-icon').innerHTML = ''; scanToast.classList.remove('visible'); scanToast.remove(); }
+      showToast(data.indexed > 0 ? `Indexed ${data.indexed} new item${data.indexed !== 1 ? 's' : ''}` : 'Library is up to date', 'success');
       await fetchYears();
       await selectYear(state.year);
       setTimeout(() => {
@@ -432,6 +572,8 @@
         btn.disabled = false;
       }, 2000);
     } catch (err) {
+      if (scanToast) { scanToast.classList.remove('visible'); scanToast.remove(); }
+      showToast('Scan failed: ' + err.message, 'error');
       btn.querySelector('span').textContent = 'Rescan';
       btn.disabled = false;
     }

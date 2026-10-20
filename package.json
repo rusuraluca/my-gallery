@@ -1,5 +1,5 @@
 {
-  "name": "my-photos",
+  "name": "my-gallery",
   "version": "1.0.0",
   "description": "Apple Photos-inspired local photo gallery with yearly albums",
   "main": "server.js",

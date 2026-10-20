@@ -4,17 +4,18 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="theme-color" content="#ffffff">
-  <title>Photos</title>
+  <title>My Gallery</title>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/style.css">
+  <link rel="stylesheet" href="/style.css?v=7">
 </head>
 <body>
   <div class="app">
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <h1>Photos</h1>
+        <h1>My Gallery</h1>
       </div>
       <nav class="sidebar-nav">
         <div class="nav-section">
@@ -48,6 +49,10 @@
       <div class="main-header">
         <h2 id="current-title">All Photos</h2>
         <span class="photo-count" id="photo-count"></span>
+        <button class="header-download" id="header-download" title="Download year as ZIP" hidden>
+          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 01.5.5v2.5a1 1 0 001 1h12a1 1 0 001-1v-2.5a.5.5 0 011 0v2.5a2 2 0 01-2 2H2a2 2 0 01-2-2v-2.5a.5.5 0 01.5-.5z"/><path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/></svg>
+          <span>ZIP</span>
+        </button>
       </div>
       <div class="photo-grid" id="photo-grid"></div>
       <div class="loading" id="loading" hidden>
@@ -67,6 +72,15 @@
     </button>
     <button class="lb-btn lb-info" id="lb-info" aria-label="Info">
       <svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M9 0a9 9 0 100 18A9 9 0 009 0zm1 13.5h-2v-7h2v7zm0-8.5h-2v-2h2v2z"/></svg>
+    </button>
+    <button class="lb-btn lb-delete" id="lb-delete" aria-label="Delete photo">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M5.5 5.5A.5.5 0 016 6v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm2.5 0a.5.5 0 01.5.5v6a.5.5 0 01-1 0V6a.5.5 0 01.5-.5zm3 .5a.5.5 0 00-1 0v6a.5.5 0 001 0V6z"/><path d="M14.5 3a1 1 0 00-1-1h-2.38a1 1 0 00-.97.72L9.68 5H4a1 1 0 000 2h.5l.93 6.4A1.5 1.5 0 006.92 15h4.16a1.5 1.5 0 001.49-1.6L13.5 7H14a1 1 0 000-2h-.5l.34-1.28A1 1 0 0014.5 3zM5 7h8l-.83 5.6a.5.5 0 01-.5.4H6.92a.5.5 0 01-.5-.4L5 7z"/></svg>
+    </button>
+    <button class="lb-btn lb-share" id="lb-share" aria-label="Share photo">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M8.5 1.5a.75.75 0 00-1.5 0v.93A4.001 4.001 0 002.5 6.38v.27a.75.75 0 001.5 0v-.27a2.5 2.5 0 014.5-1.5l.64.63.64-.63a2.5 2.5 0 014.5 1.5v4.24a2.5 2.5 0 01-4.5 1.5l-.64-.63-.64.63a2.5 2.5 0 01-4.5-1.5v-.9a.75.75 0 00-1.5 0v.9a4 4 0 007 2.62v-2.05l1.22 1.22a.75.75 0 101.06-1.06L11 7.19V4.43a4 4 0 00-2.5-2.93V1.5z"/></svg>
+    </button>
+    <button class="lb-btn lb-download" id="lb-download" aria-label="Download photo">
+      <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 01.5.5v2.5a1 1 0 001 1h12a1 1 0 001-1v-2.5a.5.5 0 011 0v2.5a2 2 0 01-2 2H2a2 2 0 01-2-2v-2.5a.5.5 0 01.5-.5z"/><path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/></svg>
     </button>
     <button class="lb-btn lb-prev" id="lb-prev" aria-label="Previous">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
@@ -114,7 +128,7 @@
     <button class="mobile-menu-btn" id="mobile-menu-btn" aria-label="Menu">
       <svg width="20" height="20" viewBox="0 0 20 20" fill="currentColor"><path d="M3 5h14M3 10h14M3 15h14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>
     </button>
-    <span class="mobile-title" id="mobile-title">Photos</span>
+    <span class="mobile-title" id="mobile-title">My Gallery</span>
     <button class="mobile-upload-btn" id="mobile-upload-btn" aria-label="Upload">
       <svg width="18" height="18" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 01.5.5v2.5a1 1 0 001 1h12a1 1 0 001-1v-2.5a.5.5 0 011 0v2.5a2 2 0 01-2 2H2a2 2 0 01-2-2v-2.5a.5.5 0 01.5-.5z"/><path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/></svg>
     </button>
@@ -122,6 +136,8 @@
 
   <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 
-  <script src="/app.js"></script>
+  <div class="toast-container" id="toast-container" aria-live="polite"></div>
+
+  <script src="/app.js?v=7"></script>
 </body>
 </html>

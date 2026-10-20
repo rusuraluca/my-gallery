@@ -1,15 +1,15 @@
-# my-photos
+# my-gallery
 
-**my-photos** is a self-hosted photo library with yearly albums, an Apple Photos–style web UI, and monthly iPhone backup — zero dependencies, just Node.js.
+**my-gallery** is a self-hosted photo library with yearly albums, an Apple Photos–style web UI, and monthly iPhone backup — zero dependencies, just Node.js.
 
-Repository: https://github.com/rusuraluca/my-photos
+Repository: https://github.com/rusuraluca/my-gallery
 
 ## What it does
 
 ```mermaid
 flowchart LR
   iPhone["📱 iPhone<br/>Shortcut (monthly)"] -->|POST /api/upload| Server["🖥️ Node.js server<br/>port 3000"]
-  Mac["💾 photos/2019/...2026/<br/>(year folders)"] -->|scan + EXIF| Server
+  Mac["💾 photos/2017/.../<br/>(year folders)"] -->|scan + EXIF| Server
   Server --> Index["📋 photos.json index<br/>(in-memory, debounced saves)"]
   Server --> Thumbs["🖼️ .thumbs/<br/>(400px JPEG via sips)"]
   Server --> Web["🌐 Web app<br/>(PWA, dark mode)"]
@@ -17,18 +17,21 @@ flowchart LR
   Web --> Lightbox["Lightbox + swipe + info"]
 ```
 
-- Photos stored as plain folders by year (`photos/2019/`, `photos/2020/`, …)
+- Photos and videos stored as plain folders by year (`photos/2017/`, `photos/2018/`, …)
 - Server reads EXIF dates, builds a searchable index, generates thumbnails
+- Photos and videos (`.mp4 .mov .m4v .avi .mkv .gif`) — videos get a poster frame and play in the lightbox
 - Web app looks and feels like Apple Photos: year sidebar, grid, lightbox, info panel, dark mode
 - Installable as a PWA on iPhone ("Add to Home Screen")
 - Upload from browser (drag & drop) or from iPhone via a monthly iOS Shortcut
+- Download a single photo, or the **whole year as a ZIP**
+- In-app toasts for uploads, scans, deletes, and downloads
 - **Zero npm dependencies** — runs with `node server.js` and nothing else
 
 ## Quick start
 
 ```bash
-git clone https://github.com/rusuraluca/my-photos.git
-cd my-photos
+git clone https://github.com/rusuraluca/my-gallery.git
+cd my-gallery
 node server.js
 ```
 
@@ -69,13 +72,12 @@ Full step-by-step: [ios-shortcut.md](ios-shortcut.md)
 ## How it stores photos
 
 ```
-my-photos/
+my-gallery/
 ├── photos/              ← your photos, plain folders by year
-│   ├── 2019/
-│   │   ├── IMG_0001.jpg
+│   ├── 2012/
+│   │   ├── 015.JPG
 │   │   └── ...
-│   ├── 2024/
-│   └── 2026/
+│   └── 2017/
 ├── photos.json          ← index (generated, don't edit)
 └── .thumbs/             ← 400px thumbnails (generated)
 ```
@@ -87,9 +89,9 @@ No database server. No container. Your photos are just files you can open in Fin
 | Bottleneck | What happens at scale | How it's fixed |
 |---|---|---|
 | Index saves | Writing `photos.json` on every photo = slow scan | Debounced batch saves (flush every 2s + on exit) |
-| Grid loading | Full-res images in grid = huge memory | 400px thumbnails via macOS `sips`, HTTP caching, lazy loading |
-| Grid rendering | DOM nodes for 10k+ photos = jank | `content-visibility: auto` + infinite scroll (100/page) |
+| Grid loading | Full-res images in grid = huge memory | 400px thumbnails via macOS `sips` (`qlmanage` for video posters), HTTP caching, native lazy loading |
 | File lookup | Linear scan of index = slow | `Set` for O(1) filepath lookups |
+| ZIP export | One big buffer = memory blowup | Streaming writer (`lib/zip.js`) — never holds a whole file in memory |
 
 **Tested comfortably:** ~50,000 photos. Beyond that, swap `photos.json` for SQLite (the `lib/db.js` interface is designed so you can).
 
@@ -101,7 +103,8 @@ No database server. No container. Your photos are just files you can open in Fin
 | `lib/db.js` | JSON index with debounced saves |
 | `lib/scanner.js` | Walks `photos/`, reads EXIF, generates thumbs |
 | `lib/exif.js` | Pure JS JPEG date parser (zero deps) |
-| `lib/thumbnails.js` | 400px thumbnails via macOS `sips` |
+| `lib/thumbnails.js` | Thumbnails via `sips`, video posters via `qlmanage` |
+| `lib/zip.js` | Streaming ZIP writer (zero deps) |
 | `public/` | Web app (HTML/CSS/JS, no framework) |
 | `ios-shortcut.md` | iPhone monthly backup setup |
 
@@ -110,9 +113,12 @@ No database server. No container. Your photos are just files you can open in Fin
 | Method | Endpoint | What it does |
 |--------|----------|--------------|
 | GET | `/api/years` | List years with photo counts |
-| GET | `/api/photos?year=2024&page=1&limit=100` | Paginated photos |
-| GET | `/api/photo/:id/thumb` | 400px thumbnail |
-| GET | `/api/photo/:id/full` | Original file |
+| GET | `/api/photos?year=2017&page=1&limit=100` | Paginated photos |
+| GET | `/api/photo/:id/thumb` | 400px thumbnail (poster frame for videos) |
+| GET | `/api/photo/:id/full` | Original file (supports HTTP range) |
+| GET | `/api/photo/:id/download` | Original file as an attachment |
+| GET | `/api/year/:year/zip` | Whole year as a streamed ZIP |
+| DELETE | `/api/photo/:id` | Remove from index, delete file + thumbnail |
 | POST | `/api/upload?filename=IMG_0001.jpg` | Upload (raw body) |
 | POST | `/api/scan` | Rescan `photos/` folder |
 
