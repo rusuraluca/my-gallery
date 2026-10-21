@@ -57,6 +57,36 @@ function readBody(req) {
   });
 }
 
+// Remove photos from the index, then delete their files and thumbnails.
+// Files are unlinked with bounded concurrency so a large bulk delete can't
+// stall the event loop by opening thousands of fds at once.
+async function removePhotos(ids, concurrency = 16) {
+  const { deletePhotos } = require('./lib/db');
+  const removed = deletePhotos(ids);
+  if (removed.length === 0) return { deleted: 0, files: 0, thumbs: 0, ids: [] };
+
+  const targets = [];
+  for (const photo of removed) {
+    targets.push(resolvePath(photo.filepath));
+    targets.push(path.join(__dirname, '.thumbs', `${photo.id}.jpg`));
+  }
+
+  let files = 0;
+  let thumbs = 0;
+  for (let i = 0; i < targets.length; i += concurrency) {
+    const chunk = targets.slice(i, i + concurrency);
+    const settled = await Promise.allSettled(chunk.map(p => fs.promises.unlink(p)));
+    settled.forEach((r, j) => {
+      if (r.status !== 'fulfilled') return;
+      if (chunk[j].endsWith('.jpg') && chunk[j].includes('.thumbs')) thumbs++;
+      else files++;
+    });
+  }
+
+  flush();
+  return { deleted: removed.length, files, thumbs, ids: removed.map(p => p.id) };
+}
+
 function parseQuery(url) {
   const q = {};
   const idx = url.indexOf('?');
@@ -175,16 +205,23 @@ const server = http.createServer(async (req, res) => {
       return fs.createReadStream(photo.filepath).pipe(res);
     }
 
+    // Delete one or many: DELETE /api/photo/:id  or  POST /api/photos/delete {ids:[...]}
     if (url.startsWith('/api/photo/') && req.method === 'DELETE') {
-      const id = url.split('/')[3];
-      const { deletePhoto } = require('./lib/db');
-      const photo = deletePhoto(id);
-      if (!photo) return json(res, { error: 'Not found' }, 404);
-      // Delete file from disk + thumbnail
-      try { const f = resolvePath(photo.filepath); if (fs.existsSync(f)) fs.unlinkSync(f); } catch (e) {}
-      try { const t = path.join(__dirname, '.thumbs', `${id}.jpg`); if (fs.existsSync(t)) fs.unlinkSync(t); } catch (e) {}
-      flush();
-      return json(res, { deleted: id });
+      const { deletePhotos } = require('./lib/db');
+      const result = await removePhotos([url.split('/')[3]]);
+      if (result.deleted === 0) return json(res, { error: 'Not found' }, 404);
+      return json(res, { deleted: result.ids[0] });
+    }
+
+    if (url === '/api/photos/delete' && req.method === 'POST') {
+      const { deletePhotos } = require('./lib/db');
+      let payload;
+      try { payload = JSON.parse((await readBody(req)).toString('utf8')); } catch (e) { return json(res, { error: 'Invalid JSON' }, 400); }
+      const ids = Array.isArray(payload.ids) ? payload.ids.filter(id => typeof id === 'string') : [];
+      if (ids.length === 0) return json(res, { error: 'No ids given' }, 400);
+      if (ids.length > 10000) return json(res, { error: 'Too many ids' }, 400);
+      const result = await removePhotos(ids);
+      return json(res, { deleted: result.deleted, files: result.files, thumbs: result.thumbs });
     }
 
     if (url.startsWith('/api/photo/')) {

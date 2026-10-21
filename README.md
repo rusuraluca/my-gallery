@@ -25,6 +25,7 @@ flowchart LR
 - Upload from browser (drag & drop) or from iPhone via a monthly iOS Shortcut
 - Download a single photo, or the **whole year as a ZIP**
 - In-app toasts for uploads, scans, deletes, and downloads
+- **Select mode**: tick many photos, then delete them all in one request
 - **Zero npm dependencies** — runs with `node server.js` and nothing else
 
 ## Quick start
@@ -124,6 +125,7 @@ entries are pruned automatically).
 | GET | `/api/photo/:id/download` | Original file as an attachment |
 | GET | `/api/year/:year/zip` | Whole year as a streamed ZIP |
 | DELETE | `/api/photo/:id` | Remove from index, delete file + thumbnail |
+| POST | `/api/photos/delete` | Bulk delete `{"ids":[...]}` — one index pass, files unlinked concurrently |
 | POST | `/api/upload?filename=IMG_0001.jpg` | Upload (raw body) |
 | POST | `/api/scan` | Rescan `photos/` folder |
 

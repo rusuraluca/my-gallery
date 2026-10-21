@@ -10,7 +10,9 @@
     total: 0,
     loading: false,
     currentIndex: 0,
-    years: []
+    years: [],
+    selectMode: false,
+    selected: new Set()
   };
 
   const grid = $('#photo-grid');
@@ -195,7 +197,10 @@
         overlay.innerHTML = '<svg width="18" height="18" viewBox="0 0 18 18" fill="currentColor"><path d="M5 3.5v11l9-5.5z"/></svg>';
         item.appendChild(overlay);
       }
-      item.addEventListener('click', () => openLightbox(state.photos.indexOf(photo)));
+      item.addEventListener('click', () => {
+        if (state.selectMode) toggleSelect(photo.id, item);
+        else openLightbox(state.photos.indexOf(photo));
+      });
       fragment.appendChild(item);
     });
 
@@ -381,14 +386,14 @@
 
       if (state.photos.length === 0) {
         closeLightbox();
-        renderSidebar();
+        renderYears();
         updateCount();
         $('#empty-state').hidden = false;
         return;
       }
       if (idx >= state.photos.length) state.currentIndex = state.photos.length - 1;
       showLightboxImage(state.currentIndex);
-      renderSidebar();
+      renderYears();
       updateCount();
     } catch (err) {
       showToast('Failed to delete: ' + err.message, 'error');
@@ -470,6 +475,109 @@
     return div.innerHTML;
   }
 
+  // ── Bulk select ────────────────────────────────
+  const selectBar = $('#select-bar');
+  const selectCount = $('#select-count');
+  const selectDeleteBtn = $('#select-delete-btn');
+
+  function setSelectMode(on) {
+    state.selectMode = on;
+    state.selected.clear();
+    grid.classList.toggle('select-mode', on);
+    selectBar.hidden = !on;
+    $('#header-select').classList.toggle('active', on);
+    $('#header-download').hidden = on || !state.year;
+    grid.querySelectorAll('.photo-item.selected').forEach(el => el.classList.remove('selected'));
+    updateSelectBar();
+  }
+
+  function updateSelectBar() {
+    const n = state.selected.size;
+    selectCount.textContent = `${n} selected`;
+    selectDeleteBtn.disabled = n === 0;
+    selectDeleteBtn.textContent = n ? `Delete ${n}` : 'Delete';
+    $('#select-all-btn').textContent = n >= state.photos.length && n > 0 ? 'Clear' : 'Select all';
+  }
+
+  function toggleSelect(id, item) {
+    if (state.selected.has(id)) {
+      state.selected.delete(id);
+      item.classList.remove('selected');
+    } else {
+      state.selected.add(id);
+      item.classList.add('selected');
+    }
+    updateSelectBar();
+  }
+
+  function setAllSelected(on) {
+    state.selected.clear();
+    grid.querySelectorAll('.photo-item').forEach(el => {
+      el.classList.toggle('selected', on);
+      if (on) state.selected.add(el.dataset.id);
+    });
+    updateSelectBar();
+  }
+
+  $('#header-select').addEventListener('click', () => setSelectMode(!state.selectMode));
+  $('#select-cancel-btn').addEventListener('click', () => setSelectMode(false));
+  $('#select-all-btn').addEventListener('click', () => {
+    const allSelected = state.selected.size >= state.photos.length && state.photos.length > 0;
+    setAllSelected(!allSelected);
+  });
+
+  selectDeleteBtn.addEventListener('click', async () => {
+    const ids = [...state.selected];
+    if (ids.length === 0) return;
+    if (!confirm(`Delete ${ids.length} item${ids.length !== 1 ? 's' : ''}?\n\nThis removes the files from disk and cannot be undone.`)) return;
+
+    selectDeleteBtn.disabled = true;
+    selectDeleteBtn.textContent = 'Deleting…';
+
+    try {
+      const res = await fetch('/api/photos/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids })
+      });
+      if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
+      const data = await res.json();
+
+      // Update state and DOM in one pass — no refetch, no re-render of the rest
+      const idSet = new Set(ids);
+      const removedByYear = {};
+      for (const photo of state.photos) {
+        if (idSet.has(photo.id)) removedByYear[photo.year] = (removedByYear[photo.year] || 0) + 1;
+      }
+      state.photos = state.photos.filter(p => !idSet.has(p.id));
+      state.total = state.photos.length;
+      grid.querySelectorAll('.photo-item').forEach(el => {
+        if (idSet.has(el.dataset.id)) el.remove();
+      });
+
+      for (const [year, count] of Object.entries(removedByYear)) {
+        const y = state.years.find(v => v.year === parseInt(year, 10));
+        if (y) {
+          y.count -= count;
+          if (y.count <= 0) state.years = state.years.filter(v => v.year !== parseInt(year, 10));
+        }
+      }
+
+      state.selected.clear();
+      setSelectMode(false);
+      renderYears();
+      updateCount();
+      layoutMasonry();
+
+      if (state.photos.length === 0) $('#empty-state').hidden = false;
+      showToast(`Deleted ${data.deleted} item${data.deleted !== 1 ? 's' : ''}`, 'success');
+    } catch (err) {
+      showToast('Delete failed: ' + err.message, 'error');
+      selectDeleteBtn.disabled = false;
+      updateSelectBar();
+    }
+  });
+
   // ── Keyboard ───────────────────────────────────
   document.addEventListener('keydown', e => {
     if (!lightbox.hidden) {
@@ -478,7 +586,10 @@
       if (e.key === 'ArrowRight') navigateLightbox(1);
       if (e.key === 'i' || e.key === 'I') $('#lb-info').click();
     } else {
-      if (e.key === 'Escape') closeSidebar();
+      if (e.key === 'Escape') {
+        if (state.selectMode) setSelectMode(false);
+        else closeSidebar();
+      }
     }
   });
 

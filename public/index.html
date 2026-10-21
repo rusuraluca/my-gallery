@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#ffffff">
   <title>My Gallery</title>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/style.css?v=10">
+  <link rel="stylesheet" href="/style.css?v=11">
 </head>
 <body>
   <div class="app">
@@ -49,10 +49,16 @@
       <div class="main-header">
         <h2 id="current-title">All Photos</h2>
         <span class="photo-count" id="photo-count"></span>
-        <button class="header-download" id="header-download" title="Download year as ZIP" hidden>
-          <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 01.5.5v2.5a1 1 0 001 1h12a1 1 0 001-1v-2.5a.5.5 0 011 0v2.5a2 2 0 01-2 2H2a2 2 0 01-2-2v-2.5a.5.5 0 01.5-.5z"/><path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/></svg>
-          <span>ZIP</span>
-        </button>
+        <div class="header-actions">
+          <button class="header-download" id="header-select" title="Select photos">
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M14 1.5A1.5 1.5 0 0012.5 0h-9A1.5 1.5 0 002 1.5v13A1.5 1.5 0 003.5 16h9a1.5 1.5 0 001.5-1.5v-13zM5.7 11.3a.75.75 0 01-1.06-1.06l1.5-1.5a.75.75 0 011.06 0l3 3a.75.75 0 01-1.06 1.06L6.17 11.3H5.7z"/><path d="M5.7 7.3a.75.75 0 01-1.06-1.06l1.5-1.5a.75.75 0 011.06 0l3 3a.75.75 0 01-1.06 1.06L6.17 7.3H5.7z" opacity=".45"/></svg>
+            <span>Select</span>
+          </button>
+          <button class="header-download" id="header-download" title="Download year as ZIP" hidden>
+            <svg width="15" height="15" viewBox="0 0 16 16" fill="currentColor"><path d="M.5 9.9a.5.5 0 01.5.5v2.5a1 1 0 001 1h12a1 1 0 001-1v-2.5a.5.5 0 011 0v2.5a2 2 0 01-2 2H2a2 2 0 01-2-2v-2.5a.5.5 0 01.5-.5z"/><path d="M7.646 1.146a.5.5 0 01.708 0l3 3a.5.5 0 01-.708.708L8.5 2.707V11.5a.5.5 0 01-1 0V2.707L5.354 4.854a.5.5 0 11-.708-.708l3-3z"/></svg>
+            <span>ZIP</span>
+          </button>
+        </div>
       </div>
       <div class="photo-grid" id="photo-grid"></div>
       <div class="loading" id="loading" hidden>
@@ -136,8 +142,15 @@
 
   <div class="sidebar-overlay" id="sidebar-overlay" hidden></div>
 
+  <div class="select-bar" id="select-bar" hidden>
+    <button class="select-bar-btn" id="select-all-btn">Select all</button>
+    <span class="select-count" id="select-count">0 selected</span>
+    <button class="select-bar-btn select-bar-cancel" id="select-cancel-btn">Cancel</button>
+    <button class="select-bar-btn select-bar-danger" id="select-delete-btn" disabled>Delete</button>
+  </div>
+
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-  <script src="/app.js?v=10"></script>
+  <script src="/app.js?v=11"></script>
 </body>
 </html>
