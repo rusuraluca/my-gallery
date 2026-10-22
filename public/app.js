@@ -184,12 +184,13 @@
 
       const img = document.createElement('img');
       img.alt = photo.filename;
-      img.loading = 'lazy';
       img.decoding = 'async';
       img.width = item.dataset.w;
       img.height = item.dataset.h;
-      img.src = `/api/photo/${photo.id}/thumb`;
+      // Deferred: the URL is attached only as the tile nears the viewport
+      img.dataset.src = `/api/photo/${photo.id}/thumb`;
       item.appendChild(img);
+      pendingImgs.push(img);
 
       if (photo.type === 'video' || /\.(mp4|mov|m4v|avi|mkv|gif)$/i.test(photo.filename)) {
         const overlay = document.createElement('div');
@@ -206,26 +207,74 @@
 
     grid.appendChild(fragment);
     layoutMasonry();
+    for (const img of pendingImgs) observeImg(img);
+    pendingImgs.length = 0;
+  }
+
+  // ── Scroll loader ───────────────────────────────
+  // Tiles are always in the DOM so the page height and masonry are correct
+  // from the start; only the image bytes arrive as you scroll, with a
+  // 1200px look-ahead so the next row is usually already decoded.
+  const pendingImgs = [];
+  const PRELOAD_MARGIN = '1200px 0px';
+
+  const imgLoader = ('IntersectionObserver' in window)
+    ? new IntersectionObserver(entries => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue;
+          loadImg(entry.target);
+          imgLoader.unobserve(entry.target);
+        }
+      }, { root: grid, rootMargin: PRELOAD_MARGIN, threshold: 0 })
+    : null;
+
+  function loadImg(img) {
+    if (!img.dataset.src) return;
+    img.src = img.dataset.src;
+    delete img.dataset.src;
+  }
+
+  function observeImg(img) {
+    if (!img.dataset.src) return;
+    if (imgLoader) imgLoader.observe(img);
+    else loadImg(img); // no IntersectionObserver: load everything
   }
 
   // ── Masonry ─────────────────────────────────────
   // Tiles span whole grid rows based on their real aspect ratio, so photos
   // keep their shape and pack tightly instead of being cropped to squares.
   const MASONRY_ROW = 4;
+  let colWidth = 0;
+  let colGap = 6;
+
   function masonryGap() {
     return parseFloat(getComputedStyle(grid).rowGap) || 6;
   }
 
+  function spanFor(item, width, gap) {
+    const nw = parseFloat(item.dataset.w) || 16;
+    const nh = parseFloat(item.dataset.h) || 9;
+    return Math.max(1, Math.ceil((width * nh / nw + gap) / (MASONRY_ROW + gap)));
+  }
+
+  // Every tile is the same width, so the column width is read once instead
+  // of once per tile — one layout pass instead of ~3,000 forced reflows.
   function layoutMasonry() {
-    const gap = masonryGap();
-    grid.querySelectorAll('.photo-item').forEach(item => {
-      const w = item.getBoundingClientRect().width;
-      if (!w) return;
-      const nw = parseFloat(item.dataset.w) || 16;
-      const nh = parseFloat(item.dataset.h) || 9;
-      const span = Math.max(1, Math.ceil((w * nh / nw + gap) / (MASONRY_ROW + gap)));
-      item.style.gridRowEnd = `span ${span}`;
-    });
+    const probe = grid.querySelector('.photo-item');
+    if (!probe) return;
+    const width = probe.getBoundingClientRect().width;
+    if (!width) return;
+    colWidth = width;
+    colGap = masonryGap();
+    for (const item of grid.querySelectorAll('.photo-item')) {
+      item.style.gridRowEnd = `span ${spanFor(item, colWidth, colGap)}`;
+    }
+  }
+
+  // Cheap path for the single tile whose real ratio just arrived
+  function layoutItem(item) {
+    if (!colWidth) return;
+    item.style.gridRowEnd = `span ${spanFor(item, colWidth, colGap)}`;
   }
 
   let masonryRaf = null;
@@ -234,15 +283,14 @@
     masonryRaf = requestAnimationFrame(() => { masonryRaf = null; layoutMasonry(); });
   }
 
-  // Re-measure once a real image size is known, and when the grid is resized
+  // Only the tile that just decoded needs re-spanning — never a full pass
   grid.addEventListener('load', e => {
     if (e.target.tagName !== 'IMG') return;
     const item = e.target.closest('.photo-item');
-    if (item && e.target.naturalWidth) {
-      item.dataset.w = e.target.naturalWidth;
-      item.dataset.h = e.target.naturalHeight;
-    }
-    scheduleMasonry();
+    if (!item || !e.target.naturalWidth) return;
+    item.dataset.w = e.target.naturalWidth;
+    item.dataset.h = e.target.naturalHeight;
+    layoutItem(item);
   }, true);
 
   new ResizeObserver(scheduleMasonry).observe(grid);
@@ -496,6 +544,7 @@
     selectCount.textContent = `${n} selected`;
     selectDeleteBtn.disabled = n === 0;
     selectDeleteBtn.textContent = n ? `Delete ${n}` : 'Delete';
+    $('#select-download-btn').disabled = n === 0;
     $('#select-all-btn').textContent = n >= state.photos.length && n > 0 ? 'Clear' : 'Select all';
   }
 
@@ -524,6 +573,18 @@
   $('#select-all-btn').addEventListener('click', () => {
     const allSelected = state.selected.size >= state.photos.length && state.photos.length > 0;
     setAllSelected(!allSelected);
+  });
+
+  $('#select-download-btn').addEventListener('click', () => {
+    const ids = [...state.selected];
+    if (ids.length === 0) return;
+    const a = document.createElement('a');
+    a.href = `/api/photos/zip?ids=${ids.join(',')}`;
+    a.download = `selected-${ids.length}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    showToast(`Downloading ${ids.length} item${ids.length !== 1 ? 's' : ''}…`, 'info');
   });
 
   selectDeleteBtn.addEventListener('click', async () => {

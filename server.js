@@ -57,6 +57,21 @@ function readBody(req) {
   });
 }
 
+// Stream a ZIP of the given photos directly to the client. Entries are
+// resolved and existence-filtered up front; the archive itself is streamed.
+function sendZip(res, photos, filename) {
+  const entries = photos
+    .map(p => ({ name: p.filename, filepath: resolvePath(p.filepath), mtime: p.taken_at ? new Date(p.taken_at) : undefined }))
+    .filter(p => fs.existsSync(p.filepath));
+  if (entries.length === 0) { res.writeHead(404); return res.end(); }
+  res.writeHead(200, {
+    'Content-Type': 'application/zip',
+    'Content-Disposition': `attachment; filename="${filename}"`,
+    'Cache-Control': 'no-cache'
+  });
+  return createZipStream(entries).pipe(res);
+}
+
 // Remove photos from the index, then delete their files and thumbnails.
 // Files are unlinked with bounded concurrency so a large bulk delete can't
 // stall the event loop by opening thousands of fds at once.
@@ -143,16 +158,17 @@ const server = http.createServer(async (req, res) => {
     if (url.startsWith('/api/year/') && url.endsWith('/zip')) {
       const year = parseInt(url.split('/')[3], 10);
       const data = getPhotos(year, 1, 100000);
-      const entries = data.photos
-        .map(p => ({ name: p.filename, filepath: resolvePath(p.filepath), mtime: p.taken_at ? new Date(p.taken_at) : undefined }))
-        .filter(p => fs.existsSync(p.filepath));
-      if (entries.length === 0) { res.writeHead(404); return res.end(); }
-      res.writeHead(200, {
-        'Content-Type': 'application/zip',
-        'Content-Disposition': `attachment; filename="photos-${year}.zip"`,
-        'Cache-Control': 'no-cache'
-      });
-      return createZipStream(entries).pipe(res);
+      return sendZip(res, data.photos, `photos-${year}.zip`);
+    }
+
+    // ZIP of an explicit selection, so a browser download streams it straight
+    // to disk instead of buffering the archive in memory first.
+    if (url === '/api/photos/zip') {
+      const ids = (query.ids || '').split(',').filter(Boolean).slice(0, 5000);
+      if (ids.length === 0) return json(res, { error: 'No ids given' }, 400);
+      const photos = ids.map(getPhoto).filter(Boolean);
+      if (photos.length === 0) return json(res, { error: 'Not found' }, 404);
+      return sendZip(res, photos, `selected-${photos.length}.zip`);
     }
 
     if (url.startsWith('/api/photo/') && url.endsWith('/download')) {
