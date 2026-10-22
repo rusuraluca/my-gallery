@@ -12,7 +12,9 @@
     currentIndex: 0,
     years: [],
     selectMode: false,
-    selected: new Set()
+    selected: new Set(),
+    rendered: 0,
+    lastYear: null
   };
 
   const grid = $('#photo-grid');
@@ -105,14 +107,15 @@
   // ── Select Year ────────────────────────────────
   async function selectYear(year) {
     state.year = year;
-    state.page = 1;
     state.photos = [];
-    state.pages = 1;
+    state.rendered = 0;
+    state.lastYear = null;
 
     $('#current-title').textContent = year ? String(year) : 'All Photos';
     $('#mobile-title').textContent = year ? String(year) : 'Photos';
     $('#header-download').hidden = !year;
     grid.innerHTML = '';
+    grid.scrollTop = 0;
     $('#empty-state').hidden = true;
 
     $$('.nav-item').forEach(el => el.classList.remove('active'));
@@ -127,24 +130,24 @@
   }
 
   async function loadPage() {
-    if (state.loading || state.page > state.pages) return;
+    if (state.loading) return;
     state.loading = true;
     $('#loading').hidden = state.photos.length > 0;
 
     try {
-      const data = await fetchPhotos(state.year, state.page);
+      const data = await fetchPhotos(state.year, 1);
       state.total = data.total;
-      state.pages = data.pages;
-      state.photos.push(...data.photos);
+      state.photos = data.photos;
+      state.rendered = 0;
+      state.lastYear = null;
+      grid.innerHTML = '';
 
-      renderPhotos(data.photos);
+      renderNextChunk();
       updateCount();
 
       if (state.photos.length === 0) {
         $('#empty-state').hidden = false;
       }
-
-      state.page++;
     } catch (err) {
       console.error('Failed to load photos:', err);
     } finally {
@@ -153,6 +156,28 @@
     }
   }
 
+  // Preload a first batch, then keep appending well before the user
+  // reaches the end, so scrolling never waits on a blank region.
+  const CHUNK = 48;
+  const PRELOAD_PX = 1200;
+
+  function renderNextChunk() {
+    if (state.rendered >= state.photos.length) return;
+    const slice = state.photos.slice(state.rendered, state.rendered + CHUNK);
+    state.rendered += slice.length;
+    renderPhotos(slice);
+  }
+
+  function fillViewport() {
+    if (state.rendered >= state.photos.length) return;
+    if (grid.scrollHeight <= grid.clientHeight + 400) renderNextChunk();
+  }
+
+  grid.addEventListener('scroll', () => {
+    const { scrollTop, scrollHeight, clientHeight } = grid;
+    if (scrollHeight - scrollTop - clientHeight < PRELOAD_PX) renderNextChunk();
+  });
+
   function updateCount() {
     const count = state.total;
     $('#photo-count').textContent = count > 0 ? `${formatCount(count)} item${count !== 1 ? 's' : ''}` : '';
@@ -160,14 +185,13 @@
 
   // ── Render Photos ─────────────────────────────
   function renderPhotos(photos) {
-    let lastYear = null;
     const showYearHeaders = !state.year;
-
     const fragment = document.createDocumentFragment();
+    const newItems = [];
 
     photos.forEach((photo, i) => {
-      if (showYearHeaders && photo.year !== lastYear) {
-        lastYear = photo.year;
+      if (showYearHeaders && photo.year !== state.lastYear) {
+        state.lastYear = photo.year;
         const divider = document.createElement('div');
         divider.className = 'year-divider';
         const count = state.years.find(y => y.year === photo.year)?.count || '';
@@ -203,12 +227,15 @@
         else openLightbox(state.photos.indexOf(photo));
       });
       fragment.appendChild(item);
+      newItems.push(item);
     });
 
     grid.appendChild(fragment);
-    layoutMasonry();
+    layoutItems(newItems);
     for (const img of pendingImgs) observeImg(img);
     pendingImgs.length = 0;
+
+    requestAnimationFrame(fillViewport);
   }
 
   // ── Scroll loader ───────────────────────────────
@@ -259,16 +286,27 @@
 
   // Every tile is the same width, so the column width is read once instead
   // of once per tile — one layout pass instead of ~3,000 forced reflows.
-  function layoutMasonry() {
+  function measureColumns() {
     const probe = grid.querySelector('.photo-item');
-    if (!probe) return;
+    if (!probe) return false;
     const width = probe.getBoundingClientRect().width;
-    if (!width) return;
+    if (!width) return false;
     colWidth = width;
     colGap = masonryGap();
-    for (const item of grid.querySelectorAll('.photo-item')) {
+    return true;
+  }
+
+  function layoutItems(items) {
+    if (!colWidth && !measureColumns()) return;
+    for (const item of items) {
       item.style.gridRowEnd = `span ${spanFor(item, colWidth, colGap)}`;
     }
+  }
+
+  // Full pass, only when the column width changes (resize)
+  function layoutMasonry() {
+    if (!measureColumns()) return;
+    layoutItems(grid.querySelectorAll('.photo-item'));
   }
 
   // Cheap path for the single tile whose real ratio just arrived
@@ -293,7 +331,7 @@
     layoutItem(item);
   }, true);
 
-  new ResizeObserver(scheduleMasonry).observe(grid);
+  new ResizeObserver(() => { colWidth = 0; scheduleMasonry(); }).observe(grid);
 
   // ── Lightbox ───────────────────────────────────
   function openLightbox(index) {
@@ -427,6 +465,12 @@
       if (!r.ok) throw new Error('Delete failed');
 
       state.photos.splice(idx, 1);
+      const tile = grid.querySelector(`.photo-item[data-id="${id}"]`);
+      if (tile) {
+        tile.remove();
+        state.rendered = Math.max(0, state.rendered - 1);
+        fillViewport();
+      }
       const y = state.years.find(y => y.year === photo.year);
       if (y) { y.count--; if (y.count <= 0) state.years = state.years.filter(v => v.year !== photo.year); }
       state.total--;
@@ -628,7 +672,9 @@
       setSelectMode(false);
       renderYears();
       updateCount();
+      state.rendered = grid.querySelectorAll('.photo-item').length;
       layoutMasonry();
+      fillViewport();
 
       if (state.photos.length === 0) $('#empty-state').hidden = false;
       showToast(`Deleted ${data.deleted} item${data.deleted !== 1 ? 's' : ''}`, 'success');
