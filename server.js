@@ -218,7 +218,7 @@ const server = http.createServer(async (req, res) => {
         'Accept-Ranges': 'bytes',
         'Cache-Control': 'public, max-age=3600'
       });
-      return fs.createReadStream(photo.filepath).pipe(res);
+      return fs.createReadStream(abs).pipe(res);
     }
 
     // Delete one or many: DELETE /api/photo/:id  or  POST /api/photos/delete {ids:[...]}

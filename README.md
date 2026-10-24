@@ -135,3 +135,7 @@ entries are pruned automatically).
 ## License
 
 MIT
+
+## Year switching & scrolling
+
+When you click a year in the sidebar, the app **preloads the first 48 tiles** immediately (enough to fill the viewport) and **appends more in chunks of 48** as you scroll within 1200px of the bottom. This keeps year switches instant even for large albums (thousands of photos) without sacrificing correct layout or scrollbar behavior.
