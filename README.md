@@ -22,7 +22,7 @@ flowchart LR
 - Photos and videos (`.mp4 .mov .m4v .avi .mkv .gif`) — videos get a poster frame and play in the lightbox
 - Web app looks and feels like Apple Photos: year sidebar, masonry grid, lightbox, info panel, dark mode
 - Installable as a PWA on iPhone ("Add to Home Screen")
-- Upload from browser (drag & drop) or from iPhone via a monthly iOS Shortcut
+- Upload from browser (drag & drop files or folders, or pick files/folders) or from iPhone via a monthly iOS Shortcut
 - Download a single photo, or the **whole year as a ZIP**
 - In-app toasts for uploads, scans, deletes, and downloads
 - **Select mode**: tick many photos, then **delete** them in one request or **download** them as a ZIP
