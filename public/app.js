@@ -701,6 +701,29 @@
   });
 
   // ── Upload ─────────────────────────────────────
+  function traverseDirectory(entry, files) {
+    return new Promise(resolve => {
+      if (entry.isFile) {
+        entry.file(f => { files.push(f); resolve(); }, () => resolve());
+        return;
+      }
+      if (entry.isDirectory) {
+        const reader = entry.createReader();
+        const read = () => {
+          reader.readEntries(entries => {
+            if (!entries.length) return resolve();
+            const ps = [];
+            for (const e of entries) ps.push(traverseDirectory(e, files));
+            Promise.all(ps).then(read);
+          }, () => resolve());
+        };
+        read();
+        return;
+      }
+      resolve();
+    });
+  }
+
   function openUpload() {
     uploadModal.hidden = false;
     requestAnimationFrame(() => uploadModal.classList.add('visible'));
@@ -728,6 +751,18 @@
     fileInput.click();
   });
 
+  const folderInput = $('#folder-input');
+  $('#folder-picker-btn').addEventListener('click', e => {
+    e.stopPropagation();
+    folderInput.click();
+  });
+
+  folderInput.addEventListener('change', () => {
+    const files = Array.from(folderInput.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(heic|heif|tif|tiff)$/i.test(f.name));
+    if (files.length) uploadFiles(files);
+    folderInput.value = '';
+  });
+
   uploadArea.addEventListener('click', () => fileInput.click());
 
   ['dragover', 'dragenter'].forEach(ev => {
@@ -745,12 +780,32 @@
   });
 
   uploadArea.addEventListener('drop', e => {
-    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/'));
+    const items = e.dataTransfer.items;
+    if (items && items.length) {
+      const files = [];
+      const promises = [];
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+        if (entry && entry.isDirectory) {
+          promises.push(traverseDirectory(entry, files));
+        } else {
+          const f = item.getAsFile ? item.getAsFile() : null;
+          if (f) files.push(f);
+        }
+      }
+      Promise.all(promises).then(() => {
+        const filtered = files.filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(heic|heif|tif|tiff)$/i.test(f.name));
+        if (filtered.length) uploadFiles(filtered);
+      });
+      return;
+    }
+    const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(heic|heif|tif|tiff)$/i.test(f.name));
     if (files.length) uploadFiles(files);
   });
 
   fileInput.addEventListener('change', () => {
-    const files = Array.from(fileInput.files);
+    const files = Array.from(fileInput.files).filter(f => f.type.startsWith('image/') || f.type.startsWith('video/') || /\.(heic|heif|tif|tiff)$/i.test(f.name));
     if (files.length) uploadFiles(files);
     fileInput.value = '';
   });

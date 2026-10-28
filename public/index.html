@@ -9,7 +9,7 @@
   <meta name="theme-color" content="#ffffff">
   <title>My Gallery</title>
   <link rel="manifest" href="/manifest.json">
-  <link rel="stylesheet" href="/style.css?v=13">
+  <link rel="stylesheet" href="/style.css?v=14">
 </head>
 <body>
   <div class="app">
@@ -119,9 +119,13 @@
       </div>
       <div class="upload-area" id="upload-area">
         <svg width="48" height="48" viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="6" y="10" width="36" height="28" rx="3"/><circle cx="17" cy="22" r="4"/><path d="M6 32l10-8 7 5 8-10 11 13"/></svg>
-        <p>Drag photos here or</p>
-        <button class="btn-primary" id="file-picker-btn">Choose Files</button>
-        <input type="file" id="file-input" multiple accept="image/*" hidden>
+        <p>Drag photos &amp; videos here or</p>
+        <div class="upload-actions">
+          <button class="btn-primary" id="file-picker-btn">Choose Files</button>
+          <button class="btn-secondary" id="folder-picker-btn">Choose Folder</button>
+        </div>
+        <input type="file" id="file-input" multiple accept="image/*,video/*,.heic,.heif" hidden>
+        <input type="file" id="folder-input" webkitdirectory directory multiple hidden>
       </div>
       <div class="upload-progress" id="upload-progress" hidden>
         <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
@@ -152,6 +156,6 @@
 
   <div class="toast-container" id="toast-container" aria-live="polite"></div>
 
-  <script src="/app.js?v=13"></script>
+  <script src="/app.js?v=14"></script>
 </body>
 </html>

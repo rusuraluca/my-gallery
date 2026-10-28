@@ -528,6 +528,31 @@ body{
 .btn-primary:hover{background:var(--accent-hover)}
 .btn-primary:active{transform:scale(.97)}
 
+.btn-secondary{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  padding:8px 16px;
+  border:1px solid var(--border);
+  background:var(--bg-elevated);
+  color:var(--text);
+  font-size:13px;
+  font-weight:500;
+  border-radius:var(--radius-md);
+  cursor:pointer;
+  transition:background var(--transition-fast);
+  font-family:inherit;
+}
+.btn-secondary:hover{background:var(--border-light)}
+.btn-secondary:active{transform:scale(.97)}
+
+.upload-actions{
+  display:flex;
+  gap:8px;
+  flex-wrap:wrap;
+  justify-content:center;
+}
+
 .upload-progress{padding:0 24px 24px}
 
 .progress-bar{
